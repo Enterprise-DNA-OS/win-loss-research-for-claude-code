@@ -12,7 +12,7 @@
       },
       {
         "title": "Verified buyer evidence",
-        "sql": "select f.code,f.theme,f.direction,f.excerpt,f.evidence_ref,f.reviewer from findings f join v_eligible_interviews i on i.id=f.interview_id where i.deal_id=$1 order by f.code",
+        "sql": "select f.theme || ' (' || f.direction || ')' finding,f.excerpt,f.evidence_ref,f.reviewer from findings f join v_eligible_interviews i on i.id=f.interview_id where i.deal_id=$1 order by f.code",
         "note": "Internal research only. Restricted interviews are excluded. Empty evidence means there is no eligible recorded finding."
       }
     ]
