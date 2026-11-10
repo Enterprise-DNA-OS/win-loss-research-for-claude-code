@@ -1,11 +1,38 @@
 [
   {
-    "name": "example",
-    "title": "TODO(author): the first document this industry must produce",
-    "for_each": "select gen_random_uuid() as id, 'Example' as name",
-    "file": "name",
+    "name": "interview-brief",
+    "title": "Internal interview brief",
+    "for_each": "select id,code from deals",
+    "file": "code",
     "sections": [
-      { "title": "Details", "sql": "select 'replace me' as item, $1::text as record_id" }
+      {
+        "title": "Deal context",
+        "layout": "record",
+        "sql": "select code,name,segment,outcome,seller_reason,competitor from deals where id=$1"
+      },
+      {
+        "title": "Verified buyer evidence",
+        "sql": "select f.code,f.theme,f.direction,f.excerpt,f.evidence_ref,f.reviewer from findings f join v_eligible_interviews i on i.id=f.interview_id where i.deal_id=$1 order by f.code",
+        "note": "Internal research only. Restricted interviews are excluded. Empty evidence means there is no eligible recorded finding."
+      }
+    ]
+  },
+  {
+    "name": "action-review",
+    "title": "Research action review",
+    "for_each": "select id,code from actions",
+    "file": "code",
+    "sections": [
+      {
+        "title": "Action",
+        "layout": "record",
+        "sql": "select code,title,owner,due_on,status,closure_ref,closed_on from actions where id=$1"
+      },
+      {
+        "title": "Evidence availability",
+        "sql": "select v.* from v_actions v join actions a on a.code=v.code where a.id=$1",
+        "note": "If evidence is restricted, review the basis before using or sharing this action."
+      }
     ]
   }
 ]

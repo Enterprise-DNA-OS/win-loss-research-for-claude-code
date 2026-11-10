@@ -1,0 +1,3 @@
+Deal ID,Deal Name,Account,Segment,Outcome,Close Date,Currency,Amount,Reason,Competitor,Owner
+example-1,"Fictional harbour, expansion",Example Harbour,Midmarket,Closed Lost,2026-01-10,NZD,12345.67,price,Example Rival,Alex
+example-2,Fictional coast renewal,Example Coast,Small business,Closed Won,2026-02-10,AUD,24000.00,service,Example Rival,Jordan

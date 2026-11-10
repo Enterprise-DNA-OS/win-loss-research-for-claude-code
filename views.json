@@ -1,13 +1,42 @@
 [
   {
     "name": "week",
-    "title": "This week",
-    "subtitle": "Win-Loss Research for Claude Code: what needs attention, rendered by npm run view",
+    "title": "Win-loss research this week",
     "sections": [
       {
         "title": "Needs attention",
-        "note": "TODO(author): point this at the industry's attention view (overdue, stuck, quiet).",
-        "sql": "select 'replace me' as item, 'TODO(author)' as why"
+        "sql": "select * from v_attention order by due_on,record"
+      },
+      {
+        "title": "Coverage by outcome",
+        "sql": "select * from v_coverage order by segment,outcome",
+        "note": "A selected interview sample. Coverage is not a statistically representative win rate."
+      }
+    ]
+  },
+  {
+    "name": "decision-factors",
+    "title": "Decision factors and seller assumptions",
+    "sections": [
+      {
+        "title": "Buyer themes",
+        "sql": "select * from v_themes order by theme,outcome",
+        "note": "One deal can mention several themes. Counts are not additive or proof of cause."
+      },
+      {
+        "title": "Different explanations",
+        "sql": "select * from v_disagreements order by deal_code"
+      }
+    ]
+  },
+  {
+    "name": "record-checks",
+    "title": "Permission and retention review",
+    "sections": [
+      {
+        "title": "Record checks",
+        "sql": "select * from v_compliance order by rule,record",
+        "note": "Selected record checks, not a legal compliance determination."
       }
     ]
   }

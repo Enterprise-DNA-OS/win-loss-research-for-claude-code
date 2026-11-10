@@ -1,0 +1,88 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { getDb, REPO_ROOT } from './lib/db.mjs';
+import { migrate } from './migrate.mjs';
+import { seed } from './seed.mjs';
+import { run, reads, usage } from './research.mjs';
+import { parseCsv } from './lib/csv.mjs';
+import { page, table } from './lib/render.mjs';
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'win-loss-test-'));
+process.env.DATA_DIR=path.join(dir,'db');process.env.OUTPUT_DIR=path.join(dir,'out');
+process.env.DATABASE_URL=process.env.TEST_DATABASE_URL||'';
+const db=await getDb();const covered=new Set();
+const call=async(...args)=>{const rows=await run(db,args);covered.add(args[0]);return rows;};
+const fail=async(args,re)=>assert.rejects(()=>run(db,args),re);
+const fixture=path.join(REPO_ROOT,'fixtures/clozd-example.csv'),map=path.join(REPO_ROOT,'fixtures/clozd-map.json');
+const count=async table=>(await db.query(`select count(*)::int n from ${table}`))[0].n;
+try{
+ assert.equal((await db.query("select count(*)::int n from information_schema.tables where table_schema='public'"))[0].n,0,'Use an empty disposable test database');
+ await migrate(db);assert.equal((await migrate(db)).ran.length,0);await seed(db);await seed(db);assert.equal(await count('deals'),5);
+ const now=(await db.query('select current_date::text d'))[0].d;
+ const later=(await db.query("select (current_date+90)::text d"))[0].d;
+ for(const k of Object.keys(reads))assert.ok(Array.isArray(await call(k)));
+ assert.equal((await call('coverage')).reduce((n,r)=>n+r.interviewed,0),2);
+ assert.equal((await call('disagreements'))[0].buyer_theme,'implementation');
+ assert.ok((await call('compliance')).some(r=>r.rule==='NZ-IPP9'));
+ assert.equal((await call('deal','kAuRi'))[0].code,'D-102');
+ const d=(await call('deal','D-101'))[0];assert.equal((await call('deal',d.id.slice(0,9)))[0].code,'D-101');
+ await fail(['deal','Harbour'],/Ambiguous[\s\S]*D-101[\s\S]*D-104/);
+ await fail(['add-deal','--name=bad'],/actor/);
+ await fail(['coverage','--typo=true'],/Unknown flag/);
+ await fail(['complete','I-103','--completed-on='+now,'--evidence-ref=test','--actor=Lee'],/permission/);
+ await fail(['add-finding','I-103','--theme=price','--direction=negative','--excerpt=not allowed','--evidence-ref=test','--actor=Lee'],/completed/);
+ const added=(await call('add-deal','--name=Test <script>alert(1)</script>','--account=Test','--segment=Test','--outcome=lost','--closed-on='+now,'--currency=NZD','--amount=12.34','--owner=Alex','--actor=Alex'))[0];
+ assert.equal((await call('deal',added.code))[0].amount_cents,1234);
+ const invalid=['add-deal','--name=Bad','--account=Test','--segment=Test','--outcome=lost','--closed-on=2026-02-30','--owner=Alex','--actor=Alex'];await fail(invalid,/date/i);
+ const planned=(await call('plan-interview',added.code,'--participant=Alias','--interviewer=Lee','--due-on='+now,'--purpose=Internal research','--retention-review-on='+later,'--actor=Lee'))[0];
+ await call('permission',planned.code,'--state=granted','--notice-ref=Receipt 1','--actor=Lee');
+ await call('complete',planned.code,'--completed-on='+now,'--evidence-ref=Interview 1','--actor=Lee');
+ await fail(['complete',planned.code,'--completed-on='+now,'--evidence-ref=Interview 1','--actor=Lee'],/planned/);
+ const finding=(await call('add-finding',planned.code,'--theme=price','--direction=negative','--excerpt=Private buyer excerpt','--evidence-ref=Interview 1 line 8','--actor=Morgan'))[0];
+ const action=(await call('add-action',finding.code,'--title=Check proposal','--owner=Alex','--due-on='+later,'--actor=Alex'))[0];
+ await fail(['close-action',action.code,'--actor=Alex'],/closure-ref/);
+ await call('close-action',action.code,'--closure-ref=Evidence of completed review','--actor=Alex');
+ await call('log',added.code,'--body=Reviewed the evidence','--actor=Alex');
+ // Multiple interviews must not inflate the number of interviewed deals.
+ const second=(await call('plan-interview','D-101','--participant=Other buyer','--interviewer=Lee','--due-on='+now,'--purpose=Research','--retention-review-on='+later,'--actor=Lee'))[0];
+ await call('permission',second.code,'--state=granted','--notice-ref=Receipt 2','--actor=Lee');
+ await call('complete',second.code,'--completed-on='+now,'--evidence-ref=Interview 2','--actor=Lee');
+ assert.equal((await call('coverage')).find(r=>r.segment==='Midmarket'&&r.outcome==='lost').interviewed,1);
+ // A completed interview past its review date is removed from current analysis.
+ await db.query("update interviews set retention_review_on=current_date-1 where code='I-102'");
+ assert.equal((await call('evidence')).some(r=>r.code==='F-102'),false);
+ assert.equal((await call('coverage')).find(r=>r.segment==='Midmarket'&&r.outcome==='won').interviewed,0);
+ await call('review-retention','I-102','--purpose=Verified continuing research purpose','--retention-review-on='+later,'--actor=Lee');
+ assert.equal((await call('evidence')).some(r=>r.code==='F-102'),true);
+ await call('withdraw',planned.code,'--actor=Lee');
+ await call('review-retention',planned.code,'--purpose=Review withdrawal request','--retention-review-on='+later,'--actor=Lee');
+ assert.equal((await call('evidence')).some(r=>r.code===finding.code),false);
+ await fail(['permission',planned.code,'--state=granted','--notice-ref=receipt','--actor=Lee'],/planned/);
+ const brief=(await call('draft-brief',added.code))[0];assert.ok(!fs.readFileSync(brief.file,'utf8').includes('Private buyer excerpt'));
+ const weekly=(await call('weekly-review'))[0];assert.match(fs.readFileSync(weekly.file,'utf8'),/coverage[\s\S]*attention[\s\S]*disagreements/);
+ const before=await count('deals'),events=await count('activity');
+ assert.equal((await call('import','clozd','--file='+fixture,'--map='+map,'--dry-run','--actor=Alex'))[0].inserted,2);
+ assert.equal(await count('deals'),before);assert.equal(await count('activity'),events);
+ assert.equal((await call('import','clozd','--file='+fixture,'--map='+map,'--actor=Alex'))[0].inserted,2);
+ assert.equal((await call('import','clozd','--file='+fixture,'--map='+map,'--actor=Alex'))[0].unchanged,2);
+ const bad=path.join(dir,'bad.csv');const source=fs.readFileSync(fixture,'utf8');fs.writeFileSync(bad,source.replace('example-1','new-1').replace('example-2','new-2').replace('24000.00','not-money'));
+ const after=await count('deals'),afterEvents=await count('activity');await fail(['import','clozd','--file='+bad,'--map='+map,'--actor=Alex'],/Amount/);assert.equal(await count('deals'),after);assert.equal(await count('activity'),afterEvents);
+ fs.writeFileSync(bad,source.replace('12345.67','99.00'));await fail(['import','clozd','--file='+bad,'--map='+map,'--actor=Alex'],/Changed source/);
+ assert.deepEqual(parseCsv('\uFEFFid,text\r\n1,"A, B\nC ""D"""\r\n'),[{id:'1',text:'A, B\nC "D"'}]);assert.throws(()=>parseCsv('a,a\n1,2'),/unique/);assert.throws(()=>parseCsv('a,b\n"bad,x'),/unclosed/);
+ const exported=(await call('export'))[0];const snapshot=JSON.parse(fs.readFileSync(exported.file));assert.equal(snapshot.deals.length,after);assert.ok(snapshot.findings.some(f=>f.excerpt==='Private buyer excerpt'),'Admin export explicitly includes restricted records');
+ assert.ok(snapshot.activity.some(a=>a.verb==='withdraw'));await assert.rejects(()=>db.query('update activity set actor=$1',['bad']),/append-only/);
+ assert.ok(page({title:'<script>bad</script>',sections:[{title:'Evidence',html:table([{text:'<img onerror=alert(1)>'}])}]}).includes('&lt;img'));
+ // CLI subprocess exits and JSON are exercised independently of the function interface.
+ if(db.mode==='pglite')await db.close();
+ const child=(script,args=[])=>spawnSync(process.execPath,[path.join(REPO_ROOT,'scripts',script),...args],{cwd:REPO_ROOT,env:process.env,encoding:'utf8'});
+ const json=child('research.mjs',['coverage','--json']);assert.equal(json.status,0,json.stderr);assert.ok(Array.isArray(JSON.parse(json.stdout)));
+ const ambiguous=child('research.mjs',['deal','Harbour']);assert.equal(ambiguous.status,1);assert.match(ambiguous.stderr,/D-101/);
+ for(const s of ['view.mjs','docs.mjs']){const r=child(s);assert.equal(r.status,0,r.stderr);}
+ const html=fs.readdirSync(path.join(process.env.OUTPUT_DIR,'docs-out/interview-brief')).map(f=>fs.readFileSync(path.join(process.env.OUTPUT_DIR,'docs-out/interview-brief',f),'utf8')).join('');assert.ok(html.includes('&lt;script&gt;'));assert.ok(!html.includes('Private buyer excerpt'));
+ await callHelp();
+ assert.deepEqual([...covered].sort(),Object.keys(usage).sort());
+ console.log(`PASS: ${covered.size} CLI commands; permission and withdrawal, coverage deduplication, atomic import, idempotence, money, private exports, HTML escaping and reports (${db.mode})`);
+ async function callHelp(){if(db.mode==='pglite'){const r=child('research.mjs',['help','--json']);assert.equal(r.status,0,r.stderr);covered.add('help');}else await call('help');}
+}finally{if(db.mode==='postgres')await db.close();else try{await db.close();}catch{}fs.rmSync(dir,{recursive:true,force:true});}

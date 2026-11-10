@@ -1,0 +1,1 @@
+The CSV and map are synthetic examples. Clozd documents selectable CSV deal exports without a fixed header contract. Map your actual selected headers, verify required fields and run a dry run. Never describe this fixture as a captured Clozd customer export.
