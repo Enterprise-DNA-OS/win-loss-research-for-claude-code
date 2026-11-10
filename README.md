@@ -6,7 +6,7 @@ Your closed deals, buyer evidence and improvement actions in a database you own.
 | Do it yourself | We customise it | We run it for you |
 |---|---|---|
 | Free base. Install and run your own research records. | Your segments, research rules and agreed Clozd records brought across. | Installed, connected and operated through Omni by Enterprise DNA. Setup fee, then a retainer. |
-| [Quick start](#quick-start) | [Get your version built](https://enterprisedna.co/omni/book/?offer=replace-software&utm_source=github&utm_medium=readme&utm_campaign=clozd) | [How it works](https://enterprisedna.co/omni/instead-of/clozd) |
+| [Quick start](#quick-start) | [Get your version built](https://enterprisedna.co/omni/book/?offer=replace-software&utm_source=github&utm_medium=readme&utm_campaign=clozd) | [How it works](https://enterprisedna.co/omni/instead-of/clozd?utm_source=github&utm_medium=readme&utm_campaign=clozd) |
 
 ## What this replaces
 
